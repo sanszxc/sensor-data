@@ -1,0 +1,90 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+// --- Pin Config ---
+#define TRIG_PIN 25
+#define ECHO_PIN 12
+#define LED_PIN 13
+
+// --- WiFi ---
+const char* ssid = "Aodeiei";
+const char* password = "12345678";
+
+// --- Webhook URL ---
+const char* webhookURL = "https://webhook.site/9f82bd5a-d10a-4767-949a-816ba9b7fd1e";
+
+// --- Detection ---
+const int detectionThreshold = 50; // cm
+int peopleCount = 0;
+bool wasPerson = false;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
+
+  // Connect to WiFi
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(50);
+    Serial.print(".");
+  }
+  Serial.println(" connected");
+}
+
+void loop() {
+  float distance = measureDistance();
+  Serial.print("Distance: ");
+  Serial.println(distance);
+
+  if (distance > 0 && distance < detectionThreshold) {
+    digitalWrite(LED_PIN, HIGH); // ไฟติด
+    if (!wasPerson) {
+      wasPerson = true; // กันนับซ้ำ
+      peopleCount++;
+      Serial.print("🧍‍♂️ คนเดินผ่าน! รวม = ");
+      Serial.println(peopleCount);
+      sendWebhook(peopleCount);
+    }
+  } else {
+    digitalWrite(LED_PIN, LOW); // ไม่มีคน = ไฟดับ
+    wasPerson = false;
+  }
+
+  delay(300); // ปรับ delay ให้เหมาะกับการตรวจจับ
+}
+
+float measureDistance() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000); // 30ms = max ~5m
+  if (duration == 0) return -1;
+  float distance = duration * 0.0343 / 2;
+  return distance;
+}
+
+void sendWebhook(int count) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    http.begin(webhookURL);
+    http.addHeader("Content-Type", "application/json");
+
+    String payload = "{\"people_count\": " + String(count) + "}";
+    int httpResponseCode = http.POST(payload);
+
+    if (httpResponseCode > 0) {
+      Serial.println("✅ Webhook ส่งแล้ว! รหัส: " + String(httpResponseCode));
+    } else {
+      Serial.println("❌ ส่ง Webhook ไม่สำเร็จ");
+    }
+
+    http.end();
+  }
+}
